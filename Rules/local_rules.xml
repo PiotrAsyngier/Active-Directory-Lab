@@ -1,0 +1,42 @@
+<group name="windows, active_directory, custom_ad_threats,">
+
+  <!-- AS-REP Roasting (Event 4768) - Zrzut biletu bez pre-autoryzacji w RC4 -->
+  <rule id="100001" level="12">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4768$</field>
+    <field name="win.eventdata.preAuthType">^0$</field>
+    <field name="win.eventdata.ticketEncryptionType">^0x17$</field>
+    <description>AD Detection: AS-REP Roasting (Ticket without Pre-Auth RC4)</description>
+    <mitre>
+      <id>T1558.004</id>
+    </mitre>
+  </rule>
+
+  <!-- Kerberoasting (Event 4769) - Tuning: Ignorowanie kont maszynowych ($) i usługi krbtgt -->
+  <rule id="100003" level="12">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4769$</field>
+    <field name="win.eventdata.ticketEncryptionType">^0x17$</field>
+    <!-- Wykluczenie kont maszynowych (końcówka $) oraz legalnych zapytań do krbtgt -->
+    <field name="win.eventdata.serviceName" negate="yes">krbtgt|\$$</field>
+    <field name="win.eventdata.targetUserName" negate="yes">\$$</field>
+    <description>AD Detection: Kerberoasting Attack (RC4 Ticket Requested)</description>
+    <mitre>
+      <id>T1558.003</id>
+    </mitre>
+  </rule>
+
+  <!-- DCSync (Event 4662) - Tuning: Ignorowanie legalnej replikacji od kontrolerów domeny (np. DC01$) -->
+  <rule id="100004" level="12">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4662$</field>
+    <field name="win.eventdata.properties">1131f6aa-9c07-11d1-f79f-00c04fc2dcd2</field>
+    <!-- Znak \$$ załatwia wykluczenie wszystkich zaufanych kontrolerów w domenie, jako że zawsze działają na kontach maszynowych -->
+    <field name="win.eventdata.subjectUserName" negate="yes">\$$</field>
+    <description>AD Detection: DCSync Attack (Directory Replication Request from Non-DC)</description>
+    <mitre>
+      <id>T1003.006</id>
+    </mitre>
+  </rule>
+
+</group>
