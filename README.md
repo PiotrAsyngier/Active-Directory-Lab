@@ -272,10 +272,21 @@ if __name__ == "__main__":
         log_debug("Za mało argumentów!")
 ```
 
+Skrypt parsuje również głęboki kontekst z węzła `data.win.eventdata`, przekazując do Slacka identyfikator zdarzenia, źródłowy adres IP, użytkownika będącego podmiotem żądania oraz cel lub nazwę usługi.
+
 Po zrestartowaniu usługi `wazuh-manager` i ponownym przeprowadzeniu ataku *DCSync*, ładunek JSON z pełnymi informacjami o incydencie dotarł bezbłędnie na zdefiniowany endpoint Webhook (`HTTP 200 OK`).
 
 
 <img width="1857" height="964" alt="Zrzut ekranu z 2026-11-04 13-28-07" src="https://github.com/user-attachments/assets/0038e3f1-3754-4c36-9078-28c1aba484e4" />
+
+
+---
+
+## 🧪 Faza 5: Detection-as-Code (Sigma) i CI/CD
+
+Reguły detekcyjne `100001`, `100003` oraz `100004` zostały przeniesione do uniwersalnego formatu YAML zgodnego z Sigma. Pliki znajdują się w katalogu `Rules/Sigma/` i zawierają dodatkowe strojenie fałszywych alarmów, między innymi wykluczenia kont maszynowych kończących się znakiem `$`.
+
+Repozytorium korzysta z GitHub Actions, które przy zmianach reguł Sigma automatycznie instaluje `sigma-cli` i waliduje składnię wszystkich plików. Dzięki temu błędne reguły mogą zostać wykryte przed scaleniem zmian.
 
 
 ---
@@ -293,7 +304,6 @@ Podczas budowy laboratorium, symulacji ataków oraz wdrażania potoku SOAR zdiag
 
 ---
 
-## 📈 Możliwości Dalszego Rozwoju (Future Enhancements)
+## 🧭 Możliwości Dalszego Rozwoju (Future Enhancements)
 
 * **Active Response na Kontrolerze Domeny:** Rozbudowa warstwy SOAR o skrypt PowerShell uruchamiany bezpośrednio przez agenta Wazuh na serwerze `DC01`, automatycznie blokujący skompromitowane konto domenowe (`Disable-ADAccount`) natychmiast po wykryciu ataku.
-* **Repozytorium Sigma Rules (Detection-as-Code):** Wyeksportowanie logiki reguł `100001`, `100003` oraz `100004` do uniwersalnego formatu YAML (Sigma) z zaawansowanym odfiltrowaniem fałszywych alarmów (*False Positives Tuning*, np. wykluczenie kont maszyn kończących się znakiem `$`).
