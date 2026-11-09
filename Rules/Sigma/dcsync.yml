@@ -1,0 +1,21 @@
+title: AD Detection - DCSync Attack (Directory Replication Request)
+id: 8b066060-6b68-4505-8968-07deca04fb6b
+status: experimental
+description: Wykrywa operacje replikacji katalogowej (DS-Replication-Get-Changes) typowe dla ataku DCSync, wykluczając zaufane kontrolery domeny.
+author: Piotr Asyngier
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4662
+        Properties|contains: '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'
+    filter_dcs:
+        SubjectUserName|endswith: '$'
+    condition: selection and not filter_dcs
+falsepositives:
+    - Ręcznie dodane serwery replikujące Azure AD Connect (wymagają osobnego wykluczenia po nazwie, np. MSOL_).
+level: high
+tags:
+    - attack.credential_access
+    - attack.t1003.006
