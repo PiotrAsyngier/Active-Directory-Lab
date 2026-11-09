@@ -1,0 +1,20 @@
+title: AD Detection - AS-REP Roasting (Ticket without Pre-Auth)
+id: 4a2e5d95-8a27-4642-9908-16320573e8e8
+status: experimental
+description: Wykrywa żądanie biletu TGT bez uwierzytelnienia wstępnego z użyciem słabego szyfrowania RC4 (0x17).
+author: Piotr Asyngier
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4768
+        PreAuthType: '0'
+        TicketEncryptionType: '0x17'
+    condition: selection
+falsepositives:
+    - Rzadkie, starsze systemy lub aplikacje niewspierające pre-autoryzacji Kerberos.
+level: high
+tags:
+    - attack.credential_access
+    - attack.t1558.004
