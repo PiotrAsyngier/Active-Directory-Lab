@@ -95,7 +95,7 @@ From the attacking machine (Ubuntu Linux, IP: `192.168.0.52`), three offensive s
 
 ### Scenario 1: AS-REP Roasting (`MITRE ATT&CK T1558.004`)
 * **Attack Mechanics:** Leveraged the disabled Kerberos pre-authentication requirement on the `j.kowalski` account. Using `GetNPUsers.py`, an `AS-REQ` request was sent directly to the Key Distribution Center (KDC), which returned an `AS-REP` message containing material encrypted with the user's NTLM hash—without requiring prior authentication.
-* **Result:** Successfully dumped the ticket hash to a file and cracked it offline using **Hashcat** (mode `-m 18200`), recovering the plaintext password (`!#Abecadlo`).
+* **Result:** Successfully dumped the ticket hash to a file and cracked it offline using **Hashcat** (mode `-m 18200`), recovering a test password in the lab environment (not published in this repository).
 
 <img width="1859" height="1006" alt="Zrzut ekranu z 2026-11-02 15-27-55" src="https://github.com/user-attachments/assets/4b125c58-6afe-4688-9c76-2d021dd5a15a" />
 <img width="1859" height="1006" alt="Zrzut ekranu z 2026-11-02 15-28-02" src="https://github.com/user-attachments/assets/5287bddc-05a9-4ef5-893e-c651132b77bb" />
@@ -165,7 +165,7 @@ Added a dedicated `<integration>` block to the Wazuh Manager configuration, inst
 ```xml
 <integration>
   <name>custom-slack.py</name>
-  <hook_url>https://webhook.site/82c1ce32-5352-43fd-a038-2699eced25cb</hook_url>
+  <hook_url>https://hooks.slack.com/services/REPLACE_WITH_SECRET</hook_url>
   <level>12</level>
   <alert_format>json</alert_format>
 </integration>
@@ -254,22 +254,21 @@ def send_alert(alert_file, hook_url):
             ]
         }
 
-        log_debug(f"Wysylanie POST na URL: {hook_url}")
-        r = requests.post(hook_url, json=slack_msg, timeout=5)
-        log_debug(f"Status HTTP: {r.status_code}")
+        log_debug("Wysylanie alertu do skonfigurowanego webhooka")
+        response = requests.post(hook_url, json=slack_msg, timeout=5)
+        response.raise_for_status()
+        log_debug(f"Status HTTP: {response.status_code}")
         
-    except Exception as e:
+    except (OSError, ValueError, json.JSONDecodeError, requests.RequestException) as e:
         log_debug(f"CRITICAL ERROR: {str(e)}")
         log_debug(traceback.format_exc())
+        sys.exit(1)
 
 if __name__ == "__main__":
-    log_debug("--- START SKRYPTU ---")
-    log_debug(f"Argumenty od Wazuha: {sys.argv}")
-    if len(sys.argv) >= 4:
-        hook_url = sys.argv[3]
-        send_alert(sys.argv[1], hook_url)
-    else:
-        log_debug("Za mało argumentów!")
+    if len(sys.argv) < 4:
+        log_debug("Za malo argumentow: oczekiwano alert_file, api_key i hook_url")
+        sys.exit(2)
+    send_alert(sys.argv[1], sys.argv[3])
 ```
 
 
@@ -301,7 +300,7 @@ Throughout the deployment, offensive simulation, and SOAR integration phases, se
 3. **Python Environment & Cryptographic Dependency Conflicts:** Resolved `secretsdump.py` execution failures and path conflicts between the `(impacket-env)` virtual environment and global packages by installing `pycryptodomex` and recompiling Impacket globally (`pip install .`).
 4. **Wazuh Integration File Ownership (`root:wazuh` vs `ossec`):** Legacy documentation referencing the deprecated `ossec` group caused permission errors on Ubuntu Server. Updated file ownership to match modern Wazuh daemon architecture (`sudo chown root:wazuh custom-slack.py` and `chmod 750`).
 5. **System-level Python Dependencies Outside Virtual Environments:** Because `wazuh-integratord` invokes integration scripts using the system default Python interpreter, the script initially failed silently due to a missing `requests` module. Fixed by installing the package globally via apt (`sudo apt install python3-requests`).
-6. **`sys.argv` Argument Parsing Bug Caused by `> /dev/null 2>&1` Injection:** Attempting to extract the webhook URL using `sys.argv[-1]` (the last argument) caused HTTP request failures. By inspecting the custom debug log (`/tmp/slack_debug.log`), it was discovered that Wazuh appends stream redirection (`> /dev/null 2>&1`) to the end of the execution array. Hardcoding the parser to read from index `sys.argv[3]` cleanly isolated the `hook_url` parameter.
+6. **Wazuh integration argument parsing:** The script follows the standard `alert_file`, `api_key`, `hook_url` contract (`sys.argv[1]` and `sys.argv[3]`) and does not write the webhook URL to the debug log. Alert-file, JSON, and HTTP failures exit with a non-zero status so Wazuh can report them.
 
 ---
 

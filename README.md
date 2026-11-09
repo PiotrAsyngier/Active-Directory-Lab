@@ -95,7 +95,7 @@ Z poziomu maszyny atakującej (Ubuntu Linux, IP: `192.168.0.52`) przeprowadzono 
 
 ### Scenariusz 1: AS-REP Roasting (`MITRE ATT&CK T1558.004`)
 * **Mechanizm ataku:** Wykorzystano brak wymogu wstępnego uwierzytelniania Kerberos dla konta `j.kowalski`. Przy użyciu skryptu `GetNPUsers.py` wysłano żądanie `AS-REQ` bezpośrednio do centrum dystrybucji kluczy (KDC), otrzymując w odpowiedzi zaszyfrowaną część wiadomości `AS-REP` bez znajomości hasła.
-* **Rezultat:** Pomyślnie zrzucono hash biletu do pliku i złamano hasło w trybie offline przy użyciu narzędzia **Hashcat** (tryb `-m 18200`), odzyskując hasło w czystym tekście (`!#Abecadlo`).
+* **Rezultat:** Pomyślnie zrzucono hash biletu do pliku i złamano hasło w trybie offline przy użyciu narzędzia **Hashcat** (tryb `-m 18200`), odzyskując testowe hasło w środowisku laboratoryjnym (niepublikowane w repozytorium).
 
 <img width="1859" height="1006" alt="Zrzut ekranu z 2026-11-02 15-27-55" src="https://github.com/user-attachments/assets/4b125c58-6afe-4688-9c76-2d021dd5a15a" />
 <img width="1859" height="1006" alt="Zrzut ekranu z 2026-11-02 15-28-02" src="https://github.com/user-attachments/assets/5287bddc-05a9-4ef5-893e-c651132b77bb" />
@@ -165,7 +165,7 @@ W głównej konfiguracji serwera Wazuh zdefiniowano blok `<integration>`, który
 ```xml
 <integration>
   <name>custom-slack.py</name>
-  <hook_url>https://webhook.site/82c1ce32-5352-43fd-a038-2699eced25cb</hook_url>
+  <hook_url>https://hooks.slack.com/services/REPLACE_WITH_SECRET</hook_url>
   <level>12</level>
   <alert_format>json</alert_format>
 </integration>
@@ -254,22 +254,21 @@ def send_alert(alert_file, hook_url):
             ]
         }
 
-        log_debug(f"Wysylanie POST na URL: {hook_url}")
-        r = requests.post(hook_url, json=slack_msg, timeout=5)
-        log_debug(f"Status HTTP: {r.status_code}")
+        log_debug("Wysylanie alertu do skonfigurowanego webhooka")
+        response = requests.post(hook_url, json=slack_msg, timeout=5)
+        response.raise_for_status()
+        log_debug(f"Status HTTP: {response.status_code}")
         
-    except Exception as e:
+    except (OSError, ValueError, json.JSONDecodeError, requests.RequestException) as e:
         log_debug(f"CRITICAL ERROR: {str(e)}")
         log_debug(traceback.format_exc())
+        sys.exit(1)
 
 if __name__ == "__main__":
-    log_debug("--- START SKRYPTU ---")
-    log_debug(f"Argumenty od Wazuha: {sys.argv}")
-    if len(sys.argv) >= 4:
-        hook_url = sys.argv[3]
-        send_alert(sys.argv[1], hook_url)
-    else:
-        log_debug("Za mało argumentów!")
+    if len(sys.argv) < 4:
+        log_debug("Za malo argumentow: oczekiwano alert_file, api_key i hook_url")
+        sys.exit(2)
+    send_alert(sys.argv[1], sys.argv[3])
 ```
 
 Skrypt parsuje również głęboki kontekst z węzła `data.win.eventdata`, przekazując do Slacka identyfikator zdarzenia, źródłowy adres IP, użytkownika będącego podmiotem żądania oraz cel lub nazwę usługi.
@@ -301,7 +300,7 @@ Podczas budowy laboratorium, symulacji ataków oraz wdrażania potoku SOAR zdiag
 3. **Konflikty zależności Pythona (`impacket` / `pycryptodomex`):** Naprawiono błędy wykonania skryptu `secretsdump.py` oraz niespójności pomiędzy środowiskiem wirtualnym `(impacket-env)` a globalnymi pakietami Pythona na maszynie Red Team poprzez rekompilację modułu (`pip install .`).
 4. **Uprawnienia systemowe integracji Wazuh (`root:wazuh` vs `ossec`):** Domyślna dokumentacja wskazująca na historyczną grupę systemową `ossec` powodowała błąd uprawnień na serwerze Ubuntu. Problem rozwiązano po weryfikacji obecnej architektury uprawnień demona i zastosowaniu komendy `sudo chown root:wazuh custom-slack.py` oraz nadaniu praw wykonywania (`chmod 750`).
 5. **Brakujące zależności HTTP poza środowiskiem wirtualnym:** Demon `wazuh-integratord` uruchamia skrypty przy użyciu systemowego interpretera Pythona, co powodowało ciche błędy importu biblioteki `requests`. Problem wyeliminowano, instalując pakiet natywnie w systemie operacyjnym (`sudo apt install python3-requests`).
-6. **Błąd parsowania argumentów `sys.argv` przez wstrzykiwanie potoku `> /dev/null 2>&1`:** Początkowa próba pobrania adresu URL webhooka z ostatniego elementu listy (`sys.argv[-1]`) skutkowała błędem wysyłki HTTP. Dzięki wdrożeniu własnego logowania diagnostycznego do pliku `/tmp/slack_debug.log` odkryto, że Wazuh podczas wywołania skryptu wstrzykuje na koniec tablicy argumentów przekierowanie strumieni (`> /dev/null 2>&1`). Problem trwale rozwiązano poprzez sztywne odwołanie do indeksu `sys.argv[3]`, w którym zawsze przekazywany jest czysty adres `hook_url`.
+6. **Parsowanie argumentów integracji Wazuh:** Skrypt korzysta ze standardowego kontraktu `alert_file`, `api_key`, `hook_url` (`sys.argv[1]` i `sys.argv[3]`) oraz nie zapisuje adresu webhooka do logu. Błędy odczytu alertu, JSON i HTTP kończą działanie kodem różnym od zera, dzięki czemu Wazuh może je zasygnalizować.
 
 ---
 
