@@ -26,4 +26,4 @@ jobs:
           pip install sigma-cli
 
       - name: Walidacja składni reguł
-        run: sigma check rules/sigma/
+        run: sigma check Rules/Sigma/
