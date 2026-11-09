@@ -1,0 +1,29 @@
+name: Sigma Rules Validation CI
+
+on:
+  push:
+    paths:
+      - 'Rules/Sigma/**.yml'
+  pull_request:
+    paths:
+      - 'Rules/Sigma/**.yml'
+
+jobs:
+  validate-sigma:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pobranie kodu repozytorium
+        uses: actions/checkout@v4
+
+      - name: Konfiguracja środowiska Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalacja narzędzia Sigma CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install sigma-cli
+
+      - name: Walidacja składni reguł
+        run: sigma check rules/sigma/
