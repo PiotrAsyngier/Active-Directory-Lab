@@ -1,6 +1,6 @@
 # 🏰 Active Directory Attack & Detection Engineering Lab (Purple Team & SOAR)
 
-![Status](https://img.shields.io/badge/Status-Uko%C5%84czony%20(Faza%204%2F4)-brightgreen)
+![Status](https://img.shields.io/badge/Status-Uko%C5%84czony%20(Faza%205%2F5)-brightgreen)
 ![SIEM](https://img.shields.io/badge/SIEM-Wazuh-blue)
 ![Platform](https://img.shields.io/badge/OS-Windows%20Server%202022%20%7C%20Ubuntu-informational)
 ![MITRE](https://img.shields.io/badge/MITRE%20ATT%26CK-T1558.004%20%7C%20T1558.003%20%7C%20T1003.006-red)
@@ -10,11 +10,12 @@
 
 W ponad 90% środowisk korporacyjnych zarządzanie tożsamością opiera się na usłudze **Active Directory (AD)**, a większość krytycznych incydentów bezpieczeństwa (od zaawansowanych kampanii APT po ataki ransomware) wiąże się z kompromitacją kont domenowych oraz nadużyciami w protokole **Kerberos**.
 
-Zrealizowany projekt (**Purple Team & SOAR Lab**) obejmuje cztery pełne fazy inżynieryjne:
+Zrealizowany projekt (**Purple Team & SOAR Lab**) obejmuje pięć pełnych faz inżynieryjnych:
 1. **Zbudowanie od zera infrastruktury domenowej** dla lasu `sec-lab.local` z odpowiednio skonfigurowaną zaawansowaną polityką audytu (**GPO Hardening**).
 2. **Przeprowadzenie symulacji rzeczywistych ataków (Adversary Emulation)** na protokół Kerberos oraz replikację katalogową (*AS-REP Roasting*, *Kerberoasting*, *DCSync*) przy użyciu narzędzi ofensywnych (**Impacket**, **Hashcat**).
 3. **Opracowanie precyzyjnych reguł detekcyjnych w systemie SIEM (Wazuh)** na podstawie analizy surowych logów bezpieczeństwa Windows (`Event ID 4768`, `4769`, `4662`), wykrywających obniżenie poziomu szyfrowania (*Encryption Downgrade* do `RC4-HMAC`) oraz nieautoryzowaną replikację bazy `NTDS.dit`.
 4. **Wdrożenie automatyzacji SOAR i ChatOps** poprzez autorski skrypt integracyjny w języku **Python**, który parsuje krytyczne alerty SIEM i wysyła natychmiastowe powiadomienia dla zespołu SOC w formacie *Slack Block Kit* przez REST API Webhook.
+5. **Przeniesienie reguł do formatu Sigma i automatyzacja walidacji** za pomocą GitHub Actions.
 
 ---
 
@@ -47,7 +48,7 @@ graph TD
     subgraph "Centralny SIEM & SOAR (Blue Team)"
         WazuhSIEM["🛡️ Wazuh SIEM Server (IP: 192.168.0.136)<br/>Analiza logów (Archives / Security Events)<br/>Custom Detection Rules (100001, 100003, 100004)"]
         SOAR["🐍 Python Integration (custom-slack.py)<br/>Parser JSON + Slack Block Kit Formatter"]
-        Webhook["💬 Kanał SOC (Slack / Webhook.site)<br/>Natychmiastowe alerty o incydentach (Level >= 12)"]
+        Webhook["💬 Kanał SOC (Slack Webhook)<br/>Natychmiastowe alerty o incydentach (Level >= 12)"]
     end
 
     Attacker -->|"1. AS-REP Roasting / Kerberoasting (Port 88)"| DC01
@@ -146,7 +147,7 @@ Podczas ataków *AS-REP Roasting* oraz *Kerberoasting* narzędzia ofensywne wymu
 
 #### 3. Reguła `100004` – Detekcja DCSync (`T1003.006`)
 * **Analizowane zdarzenie:** Windows Event ID **`4662`** (*An operation was performed on an object*).
-* **Logika detekcji:** Reguła analizuje operacje na obiektach katalogowych Active Directory i wykrywa wywołania protokołu DRSUAPI zawierające specyficzny identyfikator GUID właściwości `1131f6aa-9c07-11d1-f79f-00c04fc2dcd2` (*DS-Replication-Get-Changes*), wykorzystywany podczas nieautoryzowanej replikacji hashy z bazy `NTDS.dit`.
+* **Logika detekcji:** Reguła analizuje operacje na obiektach katalogowych Active Directory i wykrywa żądania zawierające identyfikator GUID prawa `1131f6aa-9c07-11d1-f79f-00c04fc2dcd2` (*DS-Replication-Get-Changes*) wykonane przez konto, którego nazwa nie kończy się znakiem `$`. Jest to sygnał potencjalnej nieautoryzowanej replikacji danych katalogowych.
 
 <img width="1851" height="532" alt="Zrzut ekranu z 2026-11-04 12-45-56" src="https://github.com/user-attachments/assets/c28a8eda-3c65-440a-997e-1306a567058d" />
 <img width="1856" height="999" alt="Zrzut ekranu z 2026-11-04 12-46-22" src="https://github.com/user-attachments/assets/d92c58a6-51a6-415b-9403-e85f3760ba79" />
@@ -172,104 +173,14 @@ W głównej konfiguracji serwera Wazuh zdefiniowano blok `<integration>`, który
 ```
 
 ### 2. Autorski Skrypt Przetwarzający (`/var/ossec/integrations/custom-slack.py`)
-Napisano i wdrożono skrypt w języku **Python 3**, który odczytuje plik alertu JSON wygenerowany przez silnik Wazuh, ekstrahuje kluczowe metadane incydentu (opis reguły, poziom krytyczności, identyfikator techniki MITRE ATT&CK), formatuje wiadomość zgodnie ze standardem **Slack Block Kit** i wysyła ją żądaniem HTTP POST. Dodatkowo zaimplementowano lokalny logger diagnostyczny (`/tmp/slack_debug.log`), który umożliwił precyzyjne debugowanie wywołań systemowych demona `wazuh-integratord`:
+Napisano i wdrożono skrypt w języku **Python 3**, który odczytuje plik alertu JSON wygenerowany przez silnik Wazuh, ekstrahuje kluczowe metadane incydentu (opis reguły, poziom krytyczności, identyfikator techniki MITRE ATT&CK), formatuje wiadomość zgodnie ze standardem **Slack Block Kit** i wysyła ją żądaniem HTTP POST. Dodatkowo zaimplementowano lokalny logger diagnostyczny (`/tmp/slack_debug.log`), który zapisuje postęp odczytu alertu, status HTTP oraz błędy integracji:
 
-```python
-#!/usr/bin/env python3
-import sys
-import json
-import requests
-import traceback
-
-LOG_FILE = "/tmp/slack_debug.log"
-
-def log_debug(msg):
-    with open(LOG_FILE, "a") as f:
-        f.write(msg + "\n")
-
-def send_alert(alert_file, hook_url):
-    try:
-        log_debug(f"Odczytywanie alertu: {alert_file}")
-        with open(alert_file, 'r') as f:
-            alert = json.load(f)
-
-        # 1. Podstawowe metadane reguły
-        rule_desc = alert.get('rule', {}).get('description', 'Brak opisu')
-        level = alert.get('rule', {}).get('level', '0')
-        mitre_id = alert.get('rule', {}).get('mitre', {}).get('id', ['N/A'])[0]
-        
-        # 2. Głęboki kontekst z logów Windows (Event Data)
-        win_data = alert.get('data', {}).get('win', {})
-        event_id = win_data.get('system', {}).get('eventID', 'N/A')
-        
-        event_data = win_data.get('eventdata', {})
-        source_ip = event_data.get('ipAddress', 'N/A')
-        subject_user = event_data.get('subjectUserName', 'N/A')
-        
-        # Cel różni się w zależności od typu logu (np. 4769 to serviceName, 4662 to objectName/targetUserName)
-        target = event_data.get('targetUserName') or event_data.get('serviceName') or event_data.get('objectName', 'N/A')
-
-        # 3. Formatowanie ładunku w standardzie Slack Block Kit
-        slack_msg = {
-            "blocks": [
-                {
-                    "type": "header",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "🚨 Wazuh SOC Alert",
-                        "emoji": True
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*Reguła:* {rule_desc}\n*Poziom:* {level}\n*MITRE ATT&CK:* {mitre_id}"
-                    }
-                },
-                {
-                    "type": "divider"
-                },
-                {
-                    "type": "section",
-                    "fields": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Event ID:*\n{event_id}"
-                        },
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Source IP:*\n{source_ip}"
-                        },
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Attacker (Subject):*\n{subject_user}"
-                        },
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Target/Service:*\n{target}"
-                        }
-                    ]
-                }
-            ]
-        }
-
-        log_debug("Wysylanie alertu do skonfigurowanego webhooka")
-        response = requests.post(hook_url, json=slack_msg, timeout=5)
-        response.raise_for_status()
-        log_debug(f"Status HTTP: {response.status_code}")
-        
-    except (OSError, ValueError, json.JSONDecodeError, requests.RequestException) as e:
-        log_debug(f"CRITICAL ERROR: {str(e)}")
-        log_debug(traceback.format_exc())
-        sys.exit(1)
-
-if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        log_debug("Za malo argumentow: oczekiwano alert_file, api_key i hook_url")
-        sys.exit(2)
-    send_alert(sys.argv[1], sys.argv[3])
+```text
+Integrations/custom-slack.py
 ```
+
+Źródłem prawdy jest plik `Integrations/custom-slack.py`; dokumentacja nie duplikuje
+jego implementacji, aby przykład nie rozjechał się z kodem.
 
 Skrypt parsuje również głęboki kontekst z węzła `data.win.eventdata`, przekazując do Slacka identyfikator zdarzenia, źródłowy adres IP, użytkownika będącego podmiotem żądania oraz cel lub nazwę usługi.
 
@@ -284,7 +195,7 @@ Zrzut potwierdzający pomyślne dostarczenie ładunku alertu do webhooka (`HTTP 
 
 ## 🧪 Faza 5: Detection-as-Code (Sigma) i CI/CD
 
-Reguły detekcyjne `100001`, `100003` oraz `100004` zostały przeniesione do uniwersalnego formatu YAML zgodnego z Sigma. Pliki znajdują się w katalogu `Rules/Sigma/` i zawierają dodatkowe strojenie fałszywych alarmów, między innymi wykluczenia kont maszynowych kończących się znakiem `$`.
+Reguły detekcyjne `100001`, `100003` oraz `100004` zostały przeniesione do uniwersalnego formatu YAML zgodnego z Sigma. Pliki znajdują się w katalogu `Rules/Sigma/` i zawierają dodatkowe strojenie fałszywych alarmów, między innymi wykluczenia kont maszynowych kończących się znakiem `$`. Reguły Sigma są odpowiednikami reguł Wazuh z `Rules/local_rules.xml`; walidacja składni nie jest konwersją do formatu Wazuh.
 
 Repozytorium korzysta z GitHub Actions, które przy zmianach reguł Sigma automatycznie instaluje `sigma-cli` i waliduje składnię wszystkich plików. Dzięki temu błędne reguły mogą zostać wykryte przed scaleniem zmian.
 
