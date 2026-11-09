@@ -278,6 +278,8 @@ After restarting the `wazuh-manager` service and re-running the *DCSync* attack,
 
 <img width="1857" height="964" alt="Zrzut ekranu z 2026-11-04 13-28-07" src="https://github.com/user-attachments/assets/b4ca03fc-5e77-444c-99cb-ae3373472cf9" />
 
+Screenshot confirming successful delivery of the alert payload to the webhook (`HTTP 200 OK`).
+
 
 ---
 
