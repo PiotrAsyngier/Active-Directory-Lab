@@ -1,0 +1,25 @@
+title: AD Detection - Kerberoasting Attack (RC4 Ticket Requested)
+id: 5b6c8e92-3a5f-4d9a-8b1b-252438b9d7e3
+status: experimental
+description: Wykrywa żądanie biletu serwisowego (TGS) z obniżonym szyfrowaniem (RC4), ignorując zaufane usługi (krbtgt) oraz konta maszynowe ($).
+author: Piotr Asyngier
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4769
+        TicketEncryptionType: '0x17'
+    filter_krbtgt:
+        ServiceName: 'krbtgt'
+    filter_service_machine:
+        ServiceName|endswith: '$'
+    filter_target_machine:
+        TargetUserName|endswith: '$'
+    condition: selection and not 1 of filter_*
+falsepositives:
+    - Starsze usługi wymuszające RC4 (wymaga dalszego tuningu w specyficznym środowisku).
+level: high
+tags:
+    - attack.credential_access
+    - attack.t1558.003
