@@ -193,18 +193,63 @@ def send_alert(alert_file, hook_url):
         with open(alert_file, 'r') as f:
             alert = json.load(f)
 
+        # 1. Podstawowe metadane reguły
         rule_desc = alert.get('rule', {}).get('description', 'Brak opisu')
         level = alert.get('rule', {}).get('level', '0')
         mitre_id = alert.get('rule', {}).get('mitre', {}).get('id', ['N/A'])[0]
         
+        # 2. Głęboki kontekst z logów Windows (Event Data)
+        win_data = alert.get('data', {}).get('win', {})
+        event_id = win_data.get('system', {}).get('eventID', 'N/A')
+        
+        event_data = win_data.get('eventdata', {})
+        source_ip = event_data.get('ipAddress', 'N/A')
+        subject_user = event_data.get('subjectUserName', 'N/A')
+        
+        # Cel różni się w zależności od typu logu (np. 4769 to serviceName, 4662 to objectName/targetUserName)
+        target = event_data.get('targetUserName') or event_data.get('serviceName') or event_data.get('objectName', 'N/A')
+
+        # 3. Formatowanie ładunku w standardzie Slack Block Kit
         slack_msg = {
             "blocks": [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "🚨 Wazuh SOC Alert",
+                        "emoji": True
+                    }
+                },
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"🚨 *SOC Alert*\n*Reguła:* {rule_desc}\n*Poziom:* {level}\n*MITRE:* {mitre_id}"
+                        "text": f"*Reguła:* {rule_desc}\n*Poziom:* {level}\n*MITRE ATT&CK:* {mitre_id}"
                     }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Event ID:*\n{event_id}"
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Source IP:*\n{source_ip}"
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Attacker (Subject):*\n{subject_user}"
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Target/Service:*\n{target}"
+                        }
+                    ]
                 }
             ]
         }
@@ -218,10 +263,10 @@ def send_alert(alert_file, hook_url):
         log_debug(traceback.format_exc())
 
 if __name__ == "__main__":
-    log_debug(f"--- START SKRYPTU ---")
+    log_debug("--- START SKRYPTU ---")
     log_debug(f"Argumenty od Wazuha: {sys.argv}")
     if len(sys.argv) >= 4:
-        hook_url = sys.argv[3] # Fix: Pobieranie URL ze sztywnego indeksu
+        hook_url = sys.argv[3]
         send_alert(sys.argv[1], hook_url)
     else:
         log_debug("Za mało argumentów!")
