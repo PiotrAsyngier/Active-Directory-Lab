@@ -279,6 +279,7 @@ Po zrestartowaniu usługi `wazuh-manager` i ponownym przeprowadzeniu ataku *DCSy
 
 <img width="1857" height="964" alt="Zrzut ekranu z 2026-11-04 13-28-07" src="https://github.com/user-attachments/assets/0038e3f1-3754-4c36-9078-28c1aba484e4" />
 
+Zrzut potwierdzający pomyślne dostarczenie ładunku alertu do webhooka (`HTTP 200 OK`).
 
 ---
 
